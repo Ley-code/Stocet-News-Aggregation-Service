@@ -1,0 +1,33 @@
+# Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Database
+motor==3.5.0
+beanie==1.23.6
+pymongo==4.5.0
+
+# Scraping
+httpx==0.25.2
+beautifulsoup4==4.12.2
+lxml==4.9.3
+playwright==1.40.0
+playwright-stealth==1.0.6
+
+# NLP
+flashtext==2.7
+
+# Scheduling
+apscheduler==3.10.4
+
+# Logging
+loguru==0.7.2
+
+# Configuration
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Utilities
+python-dateutil==2.8.2
+
