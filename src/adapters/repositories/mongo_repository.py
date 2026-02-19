@@ -10,8 +10,12 @@ from ...infrastructure.database.models import NewsArticleDocument
 class MongoNewsRepository(NewsRepository):
     """MongoDB implementation of NewsRepository."""
     
-    async def save(self, article: NewsArticle) -> None:
-        """Save a news article to MongoDB."""
+    async def save(self, article: NewsArticle) -> bool:
+        """Save a news article to MongoDB.
+        
+        Returns:
+            True if article was saved, False if it already exists
+        """
         try:
             # Check if article already exists
             existing = await NewsArticleDocument.find_one(
@@ -20,14 +24,21 @@ class MongoNewsRepository(NewsRepository):
             
             if existing:
                 logger.debug(f"Article already exists: {article.url}")
-                return
+                return False
             
             # Create new document
             document = NewsArticleDocument.from_domain(article)
             await document.insert()
-            logger.info(f"Saved article: {article.title[:50]}...")
+            logger.info(
+                f"✓ Successfully saved article to MongoDB: {article.title[:50]}... "
+                f"(URL: {article.url[:60]}...)"
+            )
+            return True
         except Exception as e:
-            logger.error(f"Failed to save article {article.url}: {e}")
+            logger.error(
+                f"✗ Failed to save article '{article.title[:50]}...' (URL: {article.url[:60]}...): {e}",
+                exc_info=True
+            )
             raise
     
     async def find_by_url(self, url: str) -> Optional[NewsArticle]:

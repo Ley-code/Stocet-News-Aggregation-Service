@@ -49,34 +49,65 @@ class HarvestNewsUseCase:
                 logger.info(f"Fetched {len(articles)} articles from {scraper.source_name}")
                 
                 # Process each article
+                articles_processed = 0
+                articles_with_keywords = 0
+                articles_duplicates = 0
+                articles_no_keywords = 0
+                
                 for article in articles:
                     try:
+                        articles_processed += 1
+                        
+                        # Check if article has content
+                        if not article.content or len(article.content.strip()) < 50:
+                            logger.warning(
+                                f"⚠ Article has insufficient content: {article.title[:50]}... "
+                                f"(content length: {len(article.content) if article.content else 0})"
+                            )
+                        
                         # Extract keywords and categories
-                        keywords = self.keyword_extractor.extract_keywords(
-                            f"{article.title} {article.content}"
-                        )
-                        categories = self.keyword_extractor.extract_categories(
-                            f"{article.title} {article.content}"
-                        )
+                        text_to_analyze = f"{article.title} {article.content or ''}"
+                        keywords = self.keyword_extractor.extract_keywords(text_to_analyze)
+                        categories = self.keyword_extractor.extract_categories(text_to_analyze)
                         
                         # Add tags
                         article.tags = list(categories)
                         
                         # Check if article has financial relevance
                         if keywords or categories:
+                            articles_with_keywords += 1
                             # Save to repository
-                            await self.repository.save(article)
-                            total_saved += 1
-                            logger.debug(
-                                f"Saved article: {article.title[:50]}... "
-                                f"(tags: {', '.join(categories)})"
-                            )
+                            was_saved = await self.repository.save(article)
+                            if was_saved:
+                                total_saved += 1
+                                logger.info(
+                                    f"✓ Saved new article: {article.title[:50]}... "
+                                    f"(tags: {', '.join(categories) if categories else 'none'}, keywords: {len(keywords)})"
+                                )
+                            else:
+                                articles_duplicates += 1
+                                logger.info(
+                                    f"⊘ Skipped duplicate: {article.title[:50]}... "
+                                    f"(URL: {article.url[:60]}...)"
+                                )
                         else:
-                            logger.debug(f"Skipped non-financial article: {article.title[:50]}...")
+                            articles_no_keywords += 1
+                            logger.info(
+                                f"⊘ Skipped non-financial article: {article.title[:50]}... "
+                                f"(no keywords found)"
+                            )
                     
                     except Exception as e:
-                        logger.error(f"Failed to process article: {e}")
+                        logger.error(f"Failed to process article '{article.title[:50]}...': {e}", exc_info=True)
                         continue
+                
+                logger.info(
+                    f"Processed {articles_processed} articles from {scraper.source_name}: "
+                    f"{articles_with_keywords} with keywords, "
+                    f"{articles_duplicates} duplicates, "
+                    f"{articles_no_keywords} no keywords, "
+                    f"{total_saved} saved"
+                )
                 
                 # Disconnect from scraper
                 await scraper.disconnect()

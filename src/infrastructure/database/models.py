@@ -15,6 +15,7 @@ class NewsArticleDocument(Document):
     content: str
     summary: Optional[str] = None
     tags: List[str] = Field(default_factory=list, index=True)
+    image_url: Optional[str] = None
     
     class Settings:
         name = "articles"
@@ -35,7 +36,8 @@ class NewsArticleDocument(Document):
             published_date=article.published_date,
             content=article.content,
             summary=article.summary,
-            tags=article.tags or []
+            tags=article.tags or [],
+            image_url=article.image_url
         )
     
     def to_domain(self):
@@ -48,6 +50,7 @@ class NewsArticleDocument(Document):
             published_date=self.published_date,
             content=self.content,
             summary=self.summary,
-            tags=self.tags
+            tags=self.tags,
+            image_url=self.image_url
         )
 

@@ -15,6 +15,7 @@ class NewsArticle:
     content: str
     summary: Optional[str] = None
     tags: Optional[List[str]] = None
+    image_url: Optional[str] = None
     
     def __post_init__(self):
         """Initialize default values."""

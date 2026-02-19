@@ -116,6 +116,13 @@ class AddisFortuneScraper(BaseScraperImpl):
         
         content = " ".join(content_parts) if content_parts else soup.get_text(strip=True)
         
+        # Sanitize content
+        from ...infrastructure.utils import sanitize_content, extract_image_url
+        sanitized_content = sanitize_content(content)
+        
+        # Extract image URL
+        image_url = extract_image_url(soup, url)
+        
         # Extract date if available
         date_tag = soup.find("time") or soup.find(string=re.compile(r"\w+\s+\d+,\s+\d{4}"))
         published_date = datetime.now()
@@ -137,6 +144,7 @@ class AddisFortuneScraper(BaseScraperImpl):
             url=url,
             source=self.source_name,
             published_date=published_date,
-            content=content
+            content=sanitized_content,
+            image_url=image_url
         )
 

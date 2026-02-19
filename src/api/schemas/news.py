@@ -14,6 +14,7 @@ class NewsArticleResponse(BaseModel):
     content: str
     summary: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
+    image_url: Optional[str] = None
     
     class Config:
         from_attributes = True

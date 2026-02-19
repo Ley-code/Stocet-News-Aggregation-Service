@@ -54,8 +54,12 @@ class NewsRepository(ABC):
     """Abstract base class for news article repositories."""
     
     @abstractmethod
-    async def save(self, article: NewsArticle) -> None:
-        """Save a news article to the repository."""
+    async def save(self, article: NewsArticle) -> bool:
+        """Save a news article to the repository.
+        
+        Returns:
+            True if article was saved, False if it already exists
+        """
         pass
     
     @abstractmethod

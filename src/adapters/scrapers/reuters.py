@@ -139,10 +139,62 @@ class ReutersScraper(BaseScraper):
                         .filter(t => t.length > 0)
                         .join('\\n\\n');
                     
+                    // Extract image URL - try multiple strategies
+                    let imageUrl = null;
+                    
+                    // Try Open Graph image
+                    const ogImage = document.querySelector('meta[property="og:image"]');
+                    if (ogImage && ogImage.getAttribute('content')) {
+                        imageUrl = ogImage.getAttribute('content');
+                    } else {
+                        // Try Twitter card image
+                        const twitterImage = document.querySelector('meta[name="twitter:image"]');
+                        if (twitterImage && twitterImage.getAttribute('content')) {
+                            imageUrl = twitterImage.getAttribute('content');
+                        } else {
+                            // Try to find featured image in article
+                            const featuredImg = article.querySelector('img[class*="featured"], img[class*="hero"], img[class*="main"]');
+                            if (featuredImg) {
+                                imageUrl = featuredImg.getAttribute('src') || featuredImg.getAttribute('data-src');
+                            } else {
+                                // Find first large image in article
+                                const images = article.querySelectorAll('img');
+                                for (const img of images) {
+                                    const src = img.getAttribute('src') || img.getAttribute('data-src');
+                                    if (src) {
+                                        const width = parseInt(img.getAttribute('width') || '0');
+                                        const height = parseInt(img.getAttribute('height') || '0');
+                                        if (width > 200 && height > 200) {
+                                            imageUrl = src;
+                                            break;
+                                        }
+                                        // If no dimensions, check if it's not an icon/logo
+                                        if (!src.toLowerCase().includes('icon') && 
+                                            !src.toLowerCase().includes('logo') &&
+                                            !src.toLowerCase().includes('avatar')) {
+                                            imageUrl = src;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Resolve relative URLs
+                    if (imageUrl && !imageUrl.startsWith('http')) {
+                        try {
+                            imageUrl = new URL(imageUrl, window.location.href).href;
+                        } catch (e) {
+                            imageUrl = null;
+                        }
+                    }
+                    
                     return {
                         title: title,
                         date: dateStr,
-                        content: content
+                        content: content,
+                        imageUrl: imageUrl
                     };
                 }
             """)
@@ -159,12 +211,17 @@ class ReutersScraper(BaseScraper):
                 except Exception:
                     pass
             
+            # Sanitize content
+            from ...infrastructure.utils import sanitize_content
+            sanitized_content = sanitize_content(article_data.get("content", ""))
+            
             return NewsArticle(
                 title=article_data["title"],
                 url=url,
                 source=self.source_name,
                 published_date=published_date,
-                content=article_data.get("content", "")
+                content=sanitized_content,
+                image_url=article_data.get("imageUrl")
             )
         
         except Exception as e:

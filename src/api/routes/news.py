@@ -21,7 +21,8 @@ def news_article_to_response(article: NewsArticle) -> NewsArticleResponse:
         published_date=article.published_date,
         content=article.content,
         summary=article.summary,
-        tags=article.tags or []
+        tags=article.tags or [],
+        image_url=article.image_url
     )
 
 
