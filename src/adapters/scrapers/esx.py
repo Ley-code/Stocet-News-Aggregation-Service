@@ -52,6 +52,8 @@ class ESXScraper(BaseScraperImpl):
                 try:
                     security_code = item.get("SECURITY_CODE")
                     price_value = item.get("PRICE")
+                    percent_change_value = item.get("PERCENT_CHANGE", 0)
+                    variation_value = item.get("VARIATION", 0)
                     
                     if not security_code or price_value is None:
                         continue
@@ -63,15 +65,31 @@ class ESXScraper(BaseScraperImpl):
                         logger.debug(f"Could not parse price '{price_value}' for {security_code}")
                         continue
                     
+                    # Convert percent_change to float (default to 0 if missing or invalid)
+                    try:
+                        percent_change = float(percent_change_value) if percent_change_value is not None else 0.0
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse percent_change '{percent_change_value}' for {security_code}, using 0")
+                        percent_change = 0.0
+                    
+                    # Convert variation to float (default to 0 if missing or invalid)
+                    try:
+                        variation = float(variation_value) if variation_value is not None else 0.0
+                    except (ValueError, TypeError):
+                        logger.debug(f"Could not parse variation '{variation_value}' for {security_code}, using 0")
+                        variation = 0.0
+                    
                     # Create MarketPrice entity
                     prices.append(MarketPrice(
                         ticker_symbol=security_code.upper(),
                         price=price,
+                        percent_change=percent_change,
+                        variation=variation,
                         timestamp=datetime.now(),
                         source="ESX"
                     ))
                     
-                    logger.debug(f"Extracted price: {security_code} = {price}")
+                    logger.debug(f"Extracted price: {security_code} = {price}, change: {percent_change}%, variation: {variation}")
                     
                 except Exception as e:
                     logger.debug(f"Failed to process market price item: {e}")

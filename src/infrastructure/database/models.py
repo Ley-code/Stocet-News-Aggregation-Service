@@ -60,6 +60,8 @@ class MarketPriceDocument(Document):
     
     ticker_symbol: Indexed(str, index=True)
     price: float
+    percent_change: float
+    variation: float
     timestamp: datetime = Field(index=True)
     source: str = "ESX"
     
@@ -78,6 +80,8 @@ class MarketPriceDocument(Document):
         return cls(
             ticker_symbol=price.ticker_symbol,
             price=price.price,
+            percent_change=price.percent_change,
+            variation=price.variation,
             timestamp=price.timestamp,
             source=price.source
         )
@@ -88,6 +92,8 @@ class MarketPriceDocument(Document):
         return MarketPrice(
             ticker_symbol=self.ticker_symbol,
             price=self.price,
+            percent_change=self.percent_change,
+            variation=self.variation,
             timestamp=self.timestamp,
             source=self.source
         )

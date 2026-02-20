@@ -21,6 +21,8 @@ def market_price_to_response(price) -> MarketPriceResponse:
     return MarketPriceResponse(
         ticker_symbol=price.ticker_symbol,
         price=price.price,
+        percent_change=price.percent_change,
+        variation=price.variation,
         timestamp=price.timestamp,
         source=price.source
     )

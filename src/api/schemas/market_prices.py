@@ -9,6 +9,8 @@ class MarketPriceResponse(BaseModel):
     
     ticker_symbol: str
     price: float
+    percent_change: float
+    variation: float
     timestamp: datetime
     source: str
     
