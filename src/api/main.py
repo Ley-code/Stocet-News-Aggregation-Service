@@ -11,8 +11,8 @@ from loguru import logger
 from ..infrastructure.config import settings
 from ..infrastructure.logging_config import configure_logging
 from ..infrastructure.database.connection import init_database, close_database
-from .routes import news
-from .dependencies import get_harvest_news_use_case
+from .routes import news, market_prices
+from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case
 
 # Configure logging
 configure_logging()
@@ -50,7 +50,7 @@ except Exception as e:
 
 
 async def quick_harvest_job():
-    """Quick harvest job - runs every 30 minutes."""
+    """Quick harvest job - runs at configured interval."""
     logger.info("Starting quick harvest job...")
     try:
         use_case = get_harvest_news_use_case()
@@ -71,6 +71,17 @@ async def deep_archive_job():
         logger.error(f"Deep archive job failed: {e}")
 
 
+async def market_price_job():
+    """Market price scraping job - runs at configured interval."""
+    logger.info("Starting market price scraping job...")
+    try:
+        use_case = get_harvest_market_prices_use_case()
+        count = await use_case.execute()
+        logger.info(f"Market price scraping completed: {count} prices saved")
+    except Exception as e:
+        logger.error(f"Market price scraping job failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
@@ -79,13 +90,26 @@ async def lifespan(app: FastAPI):
     await init_database()
     
     # Start scheduler
+    harvest_interval_hours = settings.harvest_interval_hours
     scheduler.add_job(
         quick_harvest_job,
-        trigger=IntervalTrigger(minutes=1),
+        trigger=IntervalTrigger(hours=harvest_interval_hours),
         id="quick_harvest",
-        name="Quick Harvest (every 30 minutes)",
+        name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
         replace_existing=True
     )
+    logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
+    
+    # Market price scraping job
+    market_price_interval_minutes = settings.market_price_scrape_interval_minutes
+    scheduler.add_job(
+        market_price_job,
+        trigger=IntervalTrigger(minutes=market_price_interval_minutes),
+        id="market_price_scrape",
+        name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
+        replace_existing=True
+    )
+    logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
     
     scheduler.add_job(
         deep_archive_job,
@@ -127,6 +151,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(news.router)
+app.include_router(market_prices.router)
 
 
 @app.get("/")

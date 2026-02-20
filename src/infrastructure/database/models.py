@@ -54,3 +54,41 @@ class NewsArticleDocument(Document):
             image_url=self.image_url
         )
 
+
+class MarketPriceDocument(Document):
+    """MongoDB document model for market prices."""
+    
+    ticker_symbol: Indexed(str, index=True)
+    price: float
+    timestamp: datetime = Field(index=True)
+    source: str = "ESX"
+    
+    class Settings:
+        name = "market_prices"
+        indexes = [
+            "ticker_symbol",
+            "timestamp",
+            [("ticker_symbol", 1), ("timestamp", -1)],  # Compound index: ticker_symbol ascending, timestamp descending
+            "source"
+        ]
+    
+    @classmethod
+    def from_domain(cls, price) -> "MarketPriceDocument":
+        """Create document from domain entity."""
+        return cls(
+            ticker_symbol=price.ticker_symbol,
+            price=price.price,
+            timestamp=price.timestamp,
+            source=price.source
+        )
+    
+    def to_domain(self):
+        """Convert document to domain entity."""
+        from ...domain.entities import MarketPrice
+        return MarketPrice(
+            ticker_symbol=self.ticker_symbol,
+            price=self.price,
+            timestamp=self.timestamp,
+            source=self.source
+        )
+

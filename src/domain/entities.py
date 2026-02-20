@@ -31,3 +31,13 @@ class NewsArticle:
         """Check if article has a specific tag."""
         return tag in self.tags
 
+
+@dataclass
+class MarketPrice:
+    """Domain entity representing a market price for a stock ticker."""
+    
+    ticker_symbol: str
+    price: float
+    timestamp: datetime
+    source: str = "ESX"
+

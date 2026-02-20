@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     circuit_breaker_threshold: int = 5  # consecutive errors before disabling
     circuit_breaker_timeout: int = 3600  # seconds before retry
     
+    # Scheduler Configuration
+    harvest_interval_hours: int = 2  # hours between harvest jobs (default: every 2 hours)
+    market_price_scrape_interval_minutes: int = 1440  # minutes between market price scrapes (default: every day)
+    
     # User Agent
     user_agent: str = "EthiopianFinancialIntelBot/1.0 (+https://github.com/your-repo/bot-policy)"
     

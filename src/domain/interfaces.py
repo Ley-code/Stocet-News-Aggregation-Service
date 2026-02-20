@@ -2,7 +2,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional
-from .entities import NewsArticle
+from .entities import NewsArticle, MarketPrice
 
 
 class BaseScraper(ABC):
@@ -79,5 +79,43 @@ class NewsRepository(ABC):
         skip: int = 0
     ) -> List[NewsArticle]:
         """Find articles matching the given criteria."""
+        pass
+
+
+class MarketPriceRepository(ABC):
+    """Abstract base class for market price repositories."""
+    
+    @abstractmethod
+    async def save(self, price: MarketPrice) -> bool:
+        """Save a market price to the repository.
+        
+        Returns:
+            True if price was saved, False otherwise
+        """
+        pass
+    
+    @abstractmethod
+    async def find_latest_by_ticker(self, ticker: str) -> Optional[MarketPrice]:
+        """Find the latest price for a specific ticker."""
+        pass
+    
+    @abstractmethod
+    async def find_by_ticker_and_date_range(
+        self,
+        ticker: str,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[MarketPrice]:
+        """Find historical prices for a ticker within a date range."""
+        pass
+    
+    @abstractmethod
+    async def find_all_tickers(self) -> List[str]:
+        """Get list of all available ticker symbols."""
+        pass
+    
+    @abstractmethod
+    async def find_latest_all(self) -> List[MarketPrice]:
+        """Get latest price for all tickers."""
         pass
 

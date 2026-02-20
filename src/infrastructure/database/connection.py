@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie
 from loguru import logger
 from ..config import settings
-from .models import NewsArticleDocument
+from .models import NewsArticleDocument, MarketPriceDocument
 
 def _debug_log(session_id, run_id, hypothesis_id, location, message, data=None):
     """Helper function for debug logging."""
@@ -44,7 +44,7 @@ async def init_database() -> None:
         # #endregion
         await init_beanie(
             database=database,
-            document_models=[NewsArticleDocument]
+            document_models=[NewsArticleDocument, MarketPriceDocument]
         )
         # #region agent log
         _debug_log("debug-session", "run1", "B", "connection.py:after_init_beanie", "After init_beanie", {})

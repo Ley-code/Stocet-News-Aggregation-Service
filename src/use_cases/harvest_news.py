@@ -73,6 +73,24 @@ class HarvestNewsUseCase:
                         # Add tags
                         article.tags = list(categories)
                         
+                        # ESX news bypasses keyword filtering (save all)
+                        if article.source == "ESX":
+                            articles_with_keywords += 1
+                            was_saved = await self.repository.save(article)
+                            if was_saved:
+                                total_saved += 1
+                                logger.info(
+                                    f"✓ Saved ESX article (no filtering): {article.title[:50]}... "
+                                    f"(tags: {', '.join(categories) if categories else 'none'})"
+                                )
+                            else:
+                                articles_duplicates += 1
+                                logger.info(
+                                    f"⊘ Skipped duplicate ESX article: {article.title[:50]}... "
+                                    f"(URL: {article.url[:60]}...)"
+                                )
+                            continue
+                        
                         # Check if article has financial relevance
                         if keywords or categories:
                             articles_with_keywords += 1
