@@ -7,7 +7,8 @@ from ..schemas.market_prices import (
     MarketPriceResponse,
     MarketPriceListResponse,
     MarketPriceHistoryResponse,
-    TickerListResponse
+    TickerListResponse,
+    TechnicalIndicatorsResponse
 )
 from ..dependencies import get_get_market_prices_use_case
 from ...use_cases.get_market_prices import GetMarketPricesUseCase
@@ -106,4 +107,32 @@ async def get_price_history(
         )
     except Exception as e:
         logger.error(f"Failed to get price history for {ticker}: {e}")
+        raise
+
+
+@router.get("/{ticker}/indicators", response_model=TechnicalIndicatorsResponse)
+async def get_technical_indicators(
+    ticker: str = Path(..., description="Ticker symbol (e.g., DASHEN, GADAA)"),
+    period_days: int = Query(30, description="Number of days to compute indicators over (default: 30)"),
+    get_market_prices_use_case: GetMarketPricesUseCase = Depends(get_get_market_prices_use_case)
+) -> TechnicalIndicatorsResponse:
+    """Get technical indicators (SMA, EMA, RSI) for a ticker.
+    
+    Currently computed on-the-fly from historical prices.
+    Future: pre-computed on data insertion and fetched directly.
+    """
+    try:
+        from datetime import timedelta
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=period_days)
+        
+        result = await get_market_prices_use_case.compute_indicators(
+            ticker.upper(),
+            start_date,
+            end_date
+        )
+        
+        return TechnicalIndicatorsResponse(**result)
+    except Exception as e:
+        logger.error(f"Failed to compute indicators for {ticker}: {e}")
         raise

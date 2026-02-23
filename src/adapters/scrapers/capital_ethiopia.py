@@ -9,7 +9,20 @@ from ...domain.entities import NewsArticle
 
 
 class CapitalEthiopiaScraper(BaseScraperImpl):
-    """Scraper for Capital Ethiopia news website."""
+    """Scraper for Capital Ethiopia news website.
+    
+    Capital Ethiopia (capitalethiopia.com) uses the Flavor theme (td-module pattern).
+    Homepage structure:
+        - No <article> tags
+        - Articles in divs with td-module-* classes
+        - Titles in <h3 class="entry-title"> containing <a href="...">
+        - Dates in <time class="entry-date">
+    
+    Article page structure:
+        - Title in <h1 class="tdb-title-text"> or first <h1>
+        - Content in <div class="td-post-content"> (NOT entry-content)
+        - Date in <time class="entry-date">
+    """
     
     def __init__(self):
         super().__init__(
@@ -18,38 +31,37 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
         )
     
     async def fetch_latest_articles(self, limit: int = 10) -> List[NewsArticle]:
-        """Fetch latest articles from Capital Ethiopia using pagination."""
+        """Fetch latest articles from Capital Ethiopia."""
         articles = []
         page = 1
-        max_pages = 5  # Limit pages to scrape
+        max_pages = 3
         
         while len(articles) < limit and page <= max_pages:
             url = f"{self.base_url}/page/{page}/" if page > 1 else self.base_url
             html = await self.fetch_html(url)
             
             if not html:
+                logger.warning(f"Capital Ethiopia: No HTML returned for {url}")
                 break
             
             try:
-                soup = BeautifulSoup(html, "lxml")
+                soup = BeautifulSoup(html, "html.parser")
                 
-                # Find article entries - Capital Ethiopia uses article tags
-                article_tags = soup.find_all("article")
+                # Capital Ethiopia uses <h3 class="entry-title"> for article titles
+                title_tags = soup.find_all("h3", class_="entry-title")
                 
-                if not article_tags:
-                    # Try alternative selectors
-                    article_tags = soup.find_all("div", class_="entry")
+                if not title_tags:
+                    # Fallback: try h2
+                    title_tags = soup.find_all("h2", class_="entry-title")
                 
-                for article_tag in article_tags:
+                if not title_tags:
+                    logger.warning(f"Capital Ethiopia: No title tags found on page {page}")
+                    break
+                
+                logger.info(f"Capital Ethiopia: Found {len(title_tags)} title tags on page {page}")
+                
+                for title_tag in title_tags:
                     try:
-                        # Extract title from h2.entry-title
-                        title_tag = article_tag.find("h2", class_="entry-title")
-                        if not title_tag:
-                            title_tag = article_tag.find("h2")
-                        
-                        if not title_tag:
-                            continue
-                        
                         link_tag = title_tag.find("a")
                         if not link_tag or not link_tag.get("href"):
                             continue
@@ -59,11 +71,23 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                             article_url = f"{self.base_url}{article_url}"
                         
                         title = link_tag.get_text(strip=True)
+                        if not title:
+                            continue
                         
-                        # Extract date from time.entry-date
-                        date_tag = article_tag.find("time", class_="entry-date")
-                        if not date_tag:
-                            date_tag = article_tag.find("time")
+                        # Extract date from nearby <time> tag
+                        # Walk up to find the module container, then look for time
+                        parent = title_tag.parent
+                        date_tag = None
+                        for _ in range(4):  # Walk up a few levels
+                            if parent is None:
+                                break
+                            date_tag = parent.find("time", class_="entry-date")
+                            if date_tag:
+                                break
+                            date_tag = parent.find("time")
+                            if date_tag:
+                                break
+                            parent = parent.parent
                         
                         published_date = datetime.now()
                         if date_tag:
@@ -79,15 +103,15 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                             article = await self.parse(article_html, article_url)
                             article.published_date = published_date
                             articles.append(article)
+                            logger.debug(f"Capital Ethiopia: Scraped article: {title[:60]}")
                             
                             if len(articles) >= limit:
                                 break
                     except Exception as e:
-                        logger.debug(f"Failed to parse article: {e}")
+                        logger.debug(f"Capital Ethiopia: Failed to parse article: {e}")
                         continue
                 
-                # Check if there are more pages
-                if not article_tags:
+                if not title_tags:
                     break
                 
                 page += 1
@@ -96,20 +120,29 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                 logger.error(f"Failed to parse Capital Ethiopia page {page}: {e}")
                 break
         
+        logger.info(f"Capital Ethiopia: Scraped {len(articles)} articles total")
         return articles[:limit]
     
     async def parse(self, raw_html: str, url: str) -> NewsArticle:
-        """Parse HTML content into NewsArticle."""
-        soup = BeautifulSoup(raw_html, "lxml")
+        """Parse article page HTML into NewsArticle."""
+        soup = BeautifulSoup(raw_html, "html.parser")
         
-        # Extract title
-        title_tag = soup.find("h1", class_="entry-title") or soup.find("h1") or soup.find("title")
+        # Extract title — Capital Ethiopia uses tdb-title-text or just h1
+        title_tag = (
+            soup.find("h1", class_="tdb-title-text")
+            or soup.find("h1", class_="entry-title")
+            or soup.find("h1")
+            or soup.find("title")
+        )
         title = title_tag.get_text(strip=True) if title_tag else "No Title"
         
-        # Extract content from div.entry-content
-        content_div = soup.find("div", class_="entry-content")
-        if not content_div:
-            content_div = soup.find("article")
+        # Extract content — Capital Ethiopia uses td-post-content (NOT entry-content)
+        content_div = (
+            soup.find("div", class_="td-post-content")
+            or soup.find("div", class_="tdb-block-inner td-fix-index")
+            or soup.find("div", class_="entry-content")
+            or soup.find("article")
+        )
         
         content_parts = []
         if content_div:
@@ -147,4 +180,3 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
             content=sanitized_content,
             image_url=image_url
         )
-
