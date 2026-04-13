@@ -13,9 +13,9 @@ The system follows Clean Architecture principles with four distinct layers:
 
 ## Features
 
+- **Background Worker**: Operates silently in the background, writing directly to the database. (Public API routes migrated to Stocet Core Service).
 - **Multi-Source Scraping**: Automated scraping from Addis Fortune, Capital Ethiopia, and Reuters
 - **Intelligent Filtering**: FlashText-based keyword extraction for financial relevance
-- **RESTful API**: FastAPI-based API with comprehensive query capabilities
 - **Scheduled Harvesting**: Automatic news harvesting every 30 minutes with weekly deep archive
 - **Legal Compliance**: Respects robots.txt and implements rate limiting
 - **Cloudflare Bypass**: Playwright with stealth mode for Reuters scraping
@@ -101,34 +101,15 @@ Environment variables (see `.env.example`):
 
 ## API Usage
 
-### Get News Articles
+The service no longer exposes public datasets (e.g. `/api/v1/news` and `/api/v1/market-prices` are removed). All public data fetching goes through the **Stocet Core Service**.
+
+### Internal Health and Trigger Endpoints
 
 ```bash
-# Get all news
-GET /api/v1/news
+# Health Check
+GET /health
 
-# Filter by category
-GET /api/v1/news?category=Treasury+Bills
-
-# Filter by source
-GET /api/v1/news?source=Reuters
-
-# Full-text search
-GET /api/v1/news?q=ESX
-
-# Date range
-GET /api/v1/news?start_date=2025-01-01T00:00:00&end_date=2025-01-31T23:59:59
-
-# Pagination
-GET /api/v1/news?limit=20&skip=0
-
-# Combined filters
-GET /api/v1/news?category=Capital+Markets&source=Addis+Fortune&limit=10
-```
-
-### Manual Harvest
-
-```bash
+# Manual Harvest
 POST /api/v1/harvest
 ```
 

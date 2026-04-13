@@ -1,9 +1,11 @@
-"""FastAPI application main file."""
-import json
-import traceback
+"""FastAPI application main file.
+
+This service acts as a background worker only.
+It scrapes news and market data on a schedule and writes to the database.
+All public API endpoints are served by Stocet-Core-Service.
+"""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -11,42 +13,13 @@ from loguru import logger
 from ..infrastructure.config import settings
 from ..infrastructure.logging_config import configure_logging
 from ..infrastructure.database.connection import init_database, close_database
-from .routes import news, market_prices
 from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case
 
 # Configure logging
 configure_logging()
 
-
-def _debug_log(session_id, run_id, hypothesis_id, location, message, data=None):
-    """Helper function for debug logging."""
-    try:
-        with open('/home/leykun/Desktop/NewsAggregationSystem/.cursor/debug.log', 'a') as f:
-            import time
-            f.write(json.dumps({
-                "sessionId": session_id,
-                "runId": run_id,
-                "hypothesisId": hypothesis_id,
-                "location": location,
-                "message": message,
-                "data": data or {},
-                "timestamp": time.time() * 1000
-            }) + '\n')
-    except Exception:
-        pass
-
-
 # Global scheduler instance
-try:
-    scheduler = AsyncIOScheduler()
-    # #region agent log
-    _debug_log("debug-session", "run1", "C", "main.py:scheduler_created", "Scheduler created", {})
-    # #endregion
-except Exception as e:
-    # #region agent log
-    _debug_log("debug-session", "run1", "C", "main.py:scheduler_creation_error", "Scheduler creation failed", {"error":str(e),"traceback":traceback.format_exc()})
-    # #endregion
-    raise
+scheduler = AsyncIOScheduler()
 
 
 async def quick_harvest_job():
@@ -86,9 +59,9 @@ async def market_price_job():
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
-    logger.info("Starting Ethiopian Financial News Aggregation System...")
+    logger.info("Starting Ethiopian Financial News Aggregation Worker...")
     await init_database()
-    
+
     # Start scheduler
     harvest_interval_hours = settings.harvest_interval_hours
     scheduler.add_job(
@@ -96,10 +69,10 @@ async def lifespan(app: FastAPI):
         trigger=IntervalTrigger(hours=harvest_interval_hours),
         id="quick_harvest",
         name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
-        replace_existing=True
+        replace_existing=True,
     )
     logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
-    
+
     # Market price scraping job
     market_price_interval_minutes = settings.market_price_scrape_interval_minutes
     scheduler.add_job(
@@ -107,60 +80,47 @@ async def lifespan(app: FastAPI):
         trigger=IntervalTrigger(minutes=market_price_interval_minutes),
         id="market_price_scrape",
         name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
-        replace_existing=True
+        replace_existing=True,
     )
     logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
-    
+
     scheduler.add_job(
         deep_archive_job,
         trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
         id="deep_archive",
         name="Deep Archive (weekly on Sunday at 2 AM)",
-        replace_existing=True
+        replace_existing=True,
     )
-    
+
     scheduler.start()
     logger.info("Scheduler started")
-    logger.info("Application started successfully")
-    
+    logger.info("Worker started successfully")
+
     yield
-    
+
     # Shutdown
-    logger.info("Shutting down application...")
+    logger.info("Shutting down worker...")
     scheduler.shutdown()
     await close_database()
-    logger.info("Application shut down")
+    logger.info("Worker shut down")
 
 
-# Create FastAPI app
+# Create FastAPI app (minimal - only health check, no public API routes)
 app = FastAPI(
-    title="Ethiopian Financial News Aggregation API",
-    description="API for aggregating and querying financial news from Ethiopian sources",
+    title="Ethiopian Financial News Aggregation Worker",
+    description="Background worker for scraping and storing financial news and market data. All public APIs are served by Stocet-Core-Service.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include routers
-app.include_router(news.router)
-app.include_router(market_prices.router)
 
 
 @app.get("/")
 async def root():
     """Root endpoint."""
     return {
-        "message": "Ethiopian Financial News Aggregation API",
+        "message": "Ethiopian Financial News Aggregation Worker",
         "version": "1.0.0",
-        "docs": "/docs"
+        "note": "This service is a background worker only. Use Stocet-Core-Service for API access.",
     }
 
 
@@ -170,20 +130,14 @@ async def health():
     return {"status": "healthy"}
 
 
-@app.post("/api/v1/harvest")
+@app.post("/internal/harvest")
 async def harvest_news():
-    """Manually trigger news harvesting."""
+    """Manually trigger news harvesting (internal use only)."""
     try:
         use_case = get_harvest_news_use_case()
         count = await use_case.execute(limit_per_source=10)
-        return {
-            "message": "Harvest completed",
-            "articles_saved": count
-        }
+        return {"message": "Harvest completed", "articles_saved": count}
     except Exception as e:
         logger.error(f"Harvest failed: {e}")
-        return {
-            "message": "Harvest failed",
-            "error": str(e)
-        }
+        return {"message": "Harvest failed", "error": str(e)}
 
