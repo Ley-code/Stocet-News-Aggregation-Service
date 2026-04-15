@@ -5,6 +5,7 @@ It scrapes news and market data on a schedule and writes to the database.
 All public API endpoints are served by Stocet-Core-Service.
 """
 from contextlib import asynccontextmanager
+import os
 from fastapi import FastAPI
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -64,45 +65,52 @@ async def lifespan(app: FastAPI):
     await init_database()
     await init_postgres()
 
-    # Start scheduler
-    harvest_interval_hours = settings.harvest_interval_hours
-    scheduler.add_job(
-        quick_harvest_job,
-        trigger=IntervalTrigger(hours=harvest_interval_hours),
-        id="quick_harvest",
-        name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
-        replace_existing=True,
-    )
-    logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
+    is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    if not is_lambda:
+        # Start scheduler
+        harvest_interval_hours = settings.harvest_interval_hours
+        scheduler.add_job(
+            quick_harvest_job,
+            trigger=IntervalTrigger(hours=harvest_interval_hours),
+            id="quick_harvest",
+            name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
+            replace_existing=True,
+        )
+        logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
 
-    # Market price scraping job
-    market_price_interval_minutes = settings.market_price_scrape_interval_minutes
-    scheduler.add_job(
-        market_price_job,
-        trigger=IntervalTrigger(minutes=market_price_interval_minutes),
-        id="market_price_scrape",
-        name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
-        replace_existing=True,
-    )
-    logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
+        # Market price scraping job
+        market_price_interval_minutes = settings.market_price_scrape_interval_minutes
+        scheduler.add_job(
+            market_price_job,
+            trigger=IntervalTrigger(minutes=market_price_interval_minutes),
+            id="market_price_scrape",
+            name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
+            replace_existing=True,
+        )
+        logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
 
-    scheduler.add_job(
-        deep_archive_job,
-        trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
-        id="deep_archive",
-        name="Deep Archive (weekly on Sunday at 2 AM)",
-        replace_existing=True,
-    )
+        scheduler.add_job(
+            deep_archive_job,
+            trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
+            id="deep_archive",
+            name="Deep Archive (weekly on Sunday at 2 AM)",
+            replace_existing=True,
+        )
 
-    scheduler.start()
-    logger.info("Scheduler started")
+        scheduler.start()
+        logger.info("Scheduler started")
+    else:
+        logger.info("Running in AWS Lambda - bypassing APScheduler initialization")
+
     logger.info("Worker started successfully")
 
     yield
 
     # Shutdown
     logger.info("Shutting down worker...")
-    scheduler.shutdown()
+    is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    if not is_lambda:
+        scheduler.shutdown()
     await close_postgres()
     await close_database()
     logger.info("Worker shut down")

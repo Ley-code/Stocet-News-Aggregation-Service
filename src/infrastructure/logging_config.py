@@ -1,4 +1,5 @@
 """Logging configuration using loguru."""
+import os
 import sys
 from loguru import logger
 from .config import settings
@@ -17,15 +18,17 @@ def configure_logging():
         colorize=True
     )
     
-    # Add file handler
-    logger.add(
-        "logs/app_{time:YYYY-MM-DD}.log",
-        rotation="00:00",
-        retention="30 days",
-        level=settings.log_level,
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-        compression="zip"
-    )
+    is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    if not is_lambda:
+        # Add file handler
+        logger.add(
+            "logs/app_{time:YYYY-MM-DD}.log",
+            rotation="00:00",
+            retention="30 days",
+            level=settings.log_level,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            compression="zip"
+        )
     
-    logger.info(f"Logging configured with level: {settings.log_level}")
+    logger.info(f"Logging configured with level: {settings.log_level} (Lambda mode: {is_lambda})")
 

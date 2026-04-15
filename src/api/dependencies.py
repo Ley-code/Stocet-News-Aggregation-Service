@@ -3,7 +3,6 @@ from functools import lru_cache
 from ..adapters.scrapers.addis_fortune import AddisFortuneScraper
 from ..adapters.scrapers.capital_ethiopia import CapitalEthiopiaScraper
 from ..adapters.scrapers.esx import ESXScraper
-# from ..adapters.scrapers.reuters import ReutersScraper
 from ..adapters.repositories.mongo_repository import MongoNewsRepository
 from ..adapters.repositories.market_price_repository import MongoMarketPriceRepository
 from ..adapters.repositories.postgres_news_repository import PostgresNewsRepository
@@ -71,8 +70,7 @@ def get_harvest_news_use_case() -> HarvestNewsUseCase:
     scrapers = [
         AddisFortuneScraper(),
         CapitalEthiopiaScraper(),
-        ESXScraper(),  # ESX scraper for news
-        # ReutersScraper()
+        ESXScraper(),
     ]
     return HarvestNewsUseCase(
         scrapers=scrapers,
