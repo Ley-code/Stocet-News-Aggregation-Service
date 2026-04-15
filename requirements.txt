@@ -6,6 +6,7 @@ uvicorn[standard]==0.24.0
 motor==3.5.0
 beanie==1.23.6
 pymongo==4.5.0
+asyncpg==0.29.0
 
 # Scraping
 httpx==0.25.2

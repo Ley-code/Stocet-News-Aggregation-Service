@@ -13,6 +13,7 @@ from loguru import logger
 from ..infrastructure.config import settings
 from ..infrastructure.logging_config import configure_logging
 from ..infrastructure.database.connection import init_database, close_database
+from ..infrastructure.database.postgres_connection import init_postgres, close_postgres
 from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case
 
 # Configure logging
@@ -61,6 +62,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Ethiopian Financial News Aggregation Worker...")
     await init_database()
+    await init_postgres()
 
     # Start scheduler
     harvest_interval_hours = settings.harvest_interval_hours
@@ -101,6 +103,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down worker...")
     scheduler.shutdown()
+    await close_postgres()
     await close_database()
     logger.info("Worker shut down")
 

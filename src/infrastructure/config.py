@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db_name: str = "ethiopian_financial_news"
     
+    # PostgreSQL Configuration (dual-write target)
+    postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/stocet_core?sslmode=disable"
+    
     # API Configuration
     api_host: str = "0.0.0.0"
     api_port: int = 8000
