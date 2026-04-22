@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # User Agent
     user_agent: str = "EthiopianFinancialIntelBot/1.0 (+https://github.com/your-repo/bot-policy)"
     
+    # Core Service URL (for triggering alerts after price updates)
+    core_service_url: str = "http://localhost:8080/api/v1"
+    
     # Logging
     log_level: str = "INFO"
     

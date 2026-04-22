@@ -4,6 +4,7 @@ from loguru import logger
 from ..domain.entities import MarketPrice
 from ..domain.interfaces import MarketPriceRepository
 from ..adapters.scrapers.esx import ESXScraper
+from .trigger_alerts import trigger_alerts
 
 
 class HarvestMarketPricesUseCase:
@@ -62,6 +63,10 @@ class HarvestMarketPricesUseCase:
                 f"out of {len(prices)} fetched"
             )
             
+            # Trigger alert matching on the Core Service
+            if total_saved > 0:
+                trigger_alerts()
+            
             # Disconnect from scraper
             await self.scraper.disconnect()
         
@@ -73,3 +78,4 @@ class HarvestMarketPricesUseCase:
                 pass
         
         return total_saved
+
