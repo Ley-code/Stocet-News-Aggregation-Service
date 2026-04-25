@@ -1,5 +1,5 @@
 """Utility to trigger alert matching on the Core Service after price updates."""
-import requests
+import httpx
 from loguru import logger
 from ..infrastructure.config import settings
 
@@ -12,8 +12,8 @@ def trigger_alerts() -> None:
     """
     url = f"{settings.core_service_url}/internal/trigger-alerts"
     try:
-        response = requests.post(url, timeout=10)
-        if response.ok:
+        response = httpx.post(url, timeout=10.0)
+        if response.is_success:
             data = response.json()
             logger.info(
                 f"Alert trigger successful: {data.get('data', {}).get('triggered', 0)} alerts matched"
@@ -22,7 +22,7 @@ def trigger_alerts() -> None:
             logger.warning(
                 f"Alert trigger returned {response.status_code}: {response.text}"
             )
-    except requests.ConnectionError:
+    except httpx.ConnectError:
         logger.warning(f"Could not connect to Core Service at {url} – skipping alert trigger")
     except Exception as e:
         logger.error(f"Failed to trigger alerts: {e}")
