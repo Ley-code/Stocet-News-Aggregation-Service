@@ -12,7 +12,7 @@ def trigger_alerts() -> None:
     """
     url = f"{settings.core_service_url}/api/v1/internal/trigger-alerts"
     try:
-        response = httpx.post(url, timeout=10.0)
+        response = httpx.post(url, timeout=30.0)
         if response.is_success:
             data = response.json()
             logger.info(
