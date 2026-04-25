@@ -10,7 +10,7 @@ def trigger_alerts() -> None:
     Called after market prices are persisted. Failures are logged but never
     crash the main scraper process.
     """
-    url = f"{settings.core_service_url}/internal/trigger-alerts"
+    url = f"{settings.core_service_url}/api/v1/internal/trigger-alerts"
     try:
         response = httpx.post(url, timeout=10.0)
         if response.is_success:
