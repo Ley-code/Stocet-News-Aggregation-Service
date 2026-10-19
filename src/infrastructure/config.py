@@ -10,9 +10,9 @@ class Settings(BaseSettings):
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db_name: str = "ethiopian_financial_news"
     
-    # MongoDB is a legacy copy of the data; the Core service reads PostgreSQL. Off unless MONGO_ENABLED=true,
-    # so an unreachable Mongo can no longer stop harvesting.
-    mongo_enabled: bool = False
+    # Every harvest is written to PostgreSQL (source of truth, read by the Core service) and mirrored to MongoDB.
+    # If Mongo is unreachable the run continues with PostgreSQL only. Set MONGO_ENABLED=false to skip Mongo.
+    mongo_enabled: bool = True
 
     # PostgreSQL Configuration (dual-write target)
     postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/stocet_core?sslmode=disable"

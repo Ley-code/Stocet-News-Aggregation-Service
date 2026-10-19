@@ -14,7 +14,7 @@ from loguru import logger
 from ..infrastructure.config import settings
 from ..infrastructure.logging_config import configure_logging
 from ..infrastructure.database.postgres_connection import init_postgres, close_postgres, get_pool
-from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case
+from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case, set_mongo_ready
 
 # Configure logging
 configure_logging()
@@ -65,7 +65,9 @@ async def lifespan(app: FastAPI):
         from ..infrastructure.database.connection import init_database
         try:
             await init_database()
+            set_mongo_ready(True)
         except Exception as e:
+            set_mongo_ready(False)
             logger.error(f"MongoDB unavailable, continuing with PostgreSQL only: {e}")
     await init_postgres()
     if get_pool() is None:

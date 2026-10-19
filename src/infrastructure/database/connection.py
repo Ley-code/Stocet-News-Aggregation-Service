@@ -34,7 +34,8 @@ async def init_database() -> None:
         # #region agent log
         _debug_log("debug-session", "run1", "B", "connection.py:before_motor_client", "Before AsyncIOMotorClient", {})
         # #endregion
-        client = AsyncIOMotorClient(settings.mongodb_url)
+        # Fail fast when Mongo is down instead of hanging for the 30s default.
+        client = AsyncIOMotorClient(settings.mongodb_url, serverSelectionTimeoutMS=5000)
         # #region agent log
         _debug_log("debug-session", "run1", "B", "connection.py:after_motor_client", "After AsyncIOMotorClient", {})
         # #endregion

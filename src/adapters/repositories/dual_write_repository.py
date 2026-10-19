@@ -1,7 +1,7 @@
 """Dual-write repository wrappers.
 
 These wrappers implement the strangler fig pattern: writes go to both
-MongoDB (primary) and PostgreSQL (secondary). Reads delegate to the
+PostgreSQL (primary) and MongoDB (secondary). Reads delegate to the
 primary only. If the secondary write fails, the error is logged but
 the primary write is not affected.
 """
@@ -20,7 +20,7 @@ class DualWriteNewsRepository(NewsRepository):
         self._secondary = secondary
 
     async def save(self, article: NewsArticle) -> bool:
-        """Save to primary (Mongo) first, then secondary (Postgres).
+        """Save to the primary (PostgreSQL) first, then mirror to the secondary (MongoDB).
 
         The primary write must succeed. If the secondary write fails,
         the error is logged and the primary result is still returned.
@@ -73,7 +73,7 @@ class DualWriteMarketPriceRepository(MarketPriceRepository):
         self._secondary = secondary
 
     async def save(self, price: MarketPrice) -> bool:
-        """Save to primary (Mongo) first, then secondary (Postgres).
+        """Save to the primary (PostgreSQL) first, then mirror to the secondary (MongoDB).
 
         The primary write must succeed. If the secondary write fails,
         the error is logged and the primary result is still returned.

@@ -17,6 +17,19 @@ from ..use_cases.get_market_prices import GetMarketPricesUseCase
 from ..use_cases.filter_news import FilterNewsUseCase
 
 
+# Set by the app lifespan: True only if MongoDB connected on this run. While False, writes go to PostgreSQL only.
+_mongo_ready = False
+
+
+def set_mongo_ready(ready: bool) -> None:
+    global _mongo_ready
+    _mongo_ready = ready
+
+
+def _mirror_to_mongo() -> bool:
+    return settings.mongo_enabled and _mongo_ready
+
+
 @lru_cache()
 def get_keyword_extractor() -> KeywordExtractor:
     """Get keyword extractor instance."""
@@ -50,22 +63,22 @@ def get_postgres_market_price_repository() -> PostgresMarketPriceRepository:
 
 
 def get_repository():
-    """PostgreSQL is the source of truth; Mongo is mirrored only when MONGO_ENABLED=true."""
-    if not settings.mongo_enabled:
+    """Articles go to PostgreSQL (source of truth, also used for duplicate checks) and are mirrored to MongoDB."""
+    if not _mirror_to_mongo():
         return get_postgres_news_repository()
     return DualWriteNewsRepository(
-        primary=get_mongo_news_repository(),
-        secondary=get_postgres_news_repository(),
+        primary=get_postgres_news_repository(),
+        secondary=get_mongo_news_repository(),
     )
 
 
 def get_market_price_repository():
-    """PostgreSQL is the source of truth; Mongo is mirrored only when MONGO_ENABLED=true."""
-    if not settings.mongo_enabled:
+    """Prices go to PostgreSQL (source of truth) and are mirrored to MongoDB."""
+    if not _mirror_to_mongo():
         return get_postgres_market_price_repository()
     return DualWriteMarketPriceRepository(
-        primary=get_mongo_market_price_repository(),
-        secondary=get_postgres_market_price_repository(),
+        primary=get_postgres_market_price_repository(),
+        secondary=get_mongo_market_price_repository(),
     )
 
 
