@@ -8,6 +8,19 @@ from ..domain.interfaces import BaseScraper, NewsRepository
 from ..infrastructure.nlp.keyword_extractor import KeywordExtractor
 from .trigger_sentiment import trigger_sentiment
 
+
+class _NoSkipMemory:
+    """Stand-in when no skip store is wired (tests, scripts): remembers nothing."""
+
+    async def load(self) -> int:
+        return 0
+
+    def is_skipped(self, url: str) -> bool:
+        return False
+
+    async def mark(self, url: str, source=None) -> None:
+        return None
+
 # Sources are independent, so scrape them in parallel (a few at a time) to keep one run short.
 MAX_CONCURRENT_SOURCES = 4
 
@@ -29,13 +42,18 @@ class HarvestNewsUseCase:
         scrapers: List[BaseScraper],
         repository: NewsRepository,
         keyword_extractor: KeywordExtractor,
+        skip_store=None,
     ):
         self.scrapers = scrapers
         self.repository = repository
         self.keyword_extractor = keyword_extractor
+        self.skip_store = skip_store or _NoSkipMemory()
         self.results: Dict[str, SourceResult] = {}
 
     async def _is_known(self, url: str) -> bool:
+        """Already stored, or already judged irrelevant on an earlier run."""
+        if self.skip_store.is_skipped(url):
+            return True
         return await self.repository.find_by_url(url) is not None
 
     def _classify(self, article: NewsArticle, domestic: bool = True) -> bool:
@@ -66,6 +84,7 @@ class HarvestNewsUseCase:
                     try:
                         if not self._classify(article, getattr(scraper, "domestic", True)):
                             result.irrelevant += 1
+                            await self.skip_store.mark(article.url, scraper.source_name)
                             continue
                         if await self.repository.save(article):
                             result.saved += 1
@@ -89,6 +108,8 @@ class HarvestNewsUseCase:
 
     async def execute(self, limit_per_source: int = 10) -> int:
         """Harvest all sources; returns the number of new articles saved."""
+        remembered = await self.skip_store.load()
+        logger.info(f"Skipping {remembered} articles already judged irrelevant")
         sem = asyncio.Semaphore(MAX_CONCURRENT_SOURCES)
         results = await asyncio.gather(*(self._harvest_source(s, limit_per_source, sem) for s in self.scrapers))
         self.results = {s.source_name: r for s, r in zip(self.scrapers, results)}

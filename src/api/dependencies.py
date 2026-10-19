@@ -4,6 +4,7 @@ from ..adapters.scrapers.esx import ESXScraper
 from ..adapters.scrapers.registry import build_news_scrapers
 from ..infrastructure.config import settings
 from ..adapters.repositories.postgres_news_repository import PostgresNewsRepository
+from ..adapters.repositories.skipped_urls import SkippedUrlStore
 from ..adapters.repositories.postgres_market_price_repository import PostgresMarketPriceRepository
 from ..adapters.repositories.dual_write_repository import (
     DualWriteNewsRepository,
@@ -87,7 +88,8 @@ def get_harvest_news_use_case() -> HarvestNewsUseCase:
     return HarvestNewsUseCase(
         scrapers=build_news_scrapers(),
         repository=get_repository(),
-        keyword_extractor=get_keyword_extractor()
+        keyword_extractor=get_keyword_extractor(),
+        skip_store=SkippedUrlStore(),
     )
 
 

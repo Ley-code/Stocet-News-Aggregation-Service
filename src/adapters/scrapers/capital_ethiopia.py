@@ -60,6 +60,7 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                 
                 logger.info(f"Capital Ethiopia: Found {len(title_tags)} title tags on page {page}")
                 
+                fresh_on_page = 0  # articles on this listing page we hadn't already stored or rejected
                 for title_tag in title_tags:
                     try:
                         link_tag = title_tag.find("a")
@@ -99,6 +100,7 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                         
                         if await self.already_stored(article_url):
                             continue
+                        fresh_on_page += 1
 
                         # Fetch full article
                         article_html = await self.fetch_html(article_url)
@@ -116,7 +118,11 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                 
                 if not title_tags:
                     break
-                
+
+                # Newest first: a page with nothing new means every later page is old news too.
+                if fresh_on_page == 0:
+                    break
+
                 page += 1
                 
             except Exception as e:
