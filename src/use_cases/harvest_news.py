@@ -8,7 +8,7 @@ from ..domain.interfaces import BaseScraper, NewsRepository
 from ..infrastructure.nlp.keyword_extractor import KeywordExtractor
 from .trigger_sentiment import trigger_sentiment
 
-# Sources are independent, so scrape them in parallel (a few at a time) to fit a Lambda time budget.
+# Sources are independent, so scrape them in parallel (a few at a time) to keep one run short.
 MAX_CONCURRENT_SOURCES = 4
 
 
@@ -97,10 +97,10 @@ class HarvestNewsUseCase:
         failed = [name for name, r in self.results.items() if r.error]
         logger.info(f"Harvest complete: {total} new articles saved; sources failed: {failed or 'none'}")
         if total > 0:
-            # Core's own sentiment worker doesn't run on Lambda, so ask it to classify the new articles.
+            # Ask Core to classify the new articles now instead of waiting for its next scheduled pass.
             await asyncio.to_thread(trigger_sentiment)
         return total
 
     def summary(self) -> Dict[str, dict]:
-        """Per-source counts, returned from the Lambda so a run is easy to inspect in CloudWatch."""
+        """Per-source counts, printed at the end of a run so it is easy to inspect in the job log."""
         return {name: r.__dict__ for name, r in self.results.items()}

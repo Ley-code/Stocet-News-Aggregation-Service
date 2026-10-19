@@ -1,4 +1,4 @@
-# Runs the harvest on GitHub's free scheduler instead of AWS Lambda (no server, no card needed).
+# Runs the harvest on GitHub's free scheduler (no server, no card needed).
 name: Harvest
 
 on:
@@ -35,17 +35,9 @@ jobs:
       - name: Run task
         env:
           TASK: ${{ github.event_name == 'workflow_dispatch' && inputs.task || (github.event.schedule == '5 */2 * * *' && 'news' || 'market_prices') }}
-          # Makes the app run once and exit instead of starting its own scheduler.
-          AWS_LAMBDA_FUNCTION_NAME: github-actions
           POSTGRES_DSN: ${{ secrets.POSTGRES_DSN }}
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
           MONGODB_DB_NAME: ${{ secrets.MONGODB_DB_NAME }}
           CORE_SERVICE_URL: ${{ secrets.CORE_SERVICE_URL }}   # e.g. https://stocet-core-service.onrender.com/api/v1
           INTERNAL_SECRET: ${{ secrets.INTERNAL_SECRET }}
-        run: |
-          python - <<'PY'
-          import json, os
-          import lambda_function as lf
-          out = lf.lambda_handler({"task": os.environ["TASK"]}, None)
-          print(json.dumps(out, default=str)[:3000])
-          PY
+        run: python -m src.run_task "$TASK"

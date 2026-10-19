@@ -5,7 +5,6 @@ It scrapes news and market data on a schedule and writes to the database.
 All public API endpoints are served by Stocet-Core-Service.
 """
 from contextlib import asynccontextmanager
-import os
 from fastapi import FastAPI
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -56,11 +55,8 @@ async def market_price_job():
         logger.error(f"Market price scraping job failed: {e}")
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    # Startup
-    logger.info("Starting Ethiopian Financial News Aggregation Worker...")
+async def connect_databases() -> None:
+    """Connect PostgreSQL (required) and MongoDB (optional mirror)."""
     if settings.mongo_enabled:
         from ..infrastructure.database.connection import init_database
         try:
@@ -71,59 +67,63 @@ async def lifespan(app: FastAPI):
             logger.error(f"MongoDB unavailable, continuing with PostgreSQL only: {e}")
     await init_postgres()
     if get_pool() is None:
-        # Fail loudly: silently "succeeding" without a database is how harvesting stopped unnoticed.
-        raise RuntimeError("PostgreSQL is not reachable (check POSTGRES_DSN / network / security group)")
+        # Fail loudly: silently "succeeding" without a database is how harvesting once stopped unnoticed.
+        raise RuntimeError("PostgreSQL is not reachable (check POSTGRES_DSN)")
 
-    is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-    if not is_lambda:
-        # Start scheduler
-        harvest_interval_hours = settings.harvest_interval_hours
-        scheduler.add_job(
-            quick_harvest_job,
-            trigger=IntervalTrigger(hours=harvest_interval_hours),
-            id="quick_harvest",
-            name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
-            replace_existing=True,
-        )
-        logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
 
-        # Market price scraping job
-        market_price_interval_minutes = settings.market_price_scrape_interval_minutes
-        scheduler.add_job(
-            market_price_job,
-            trigger=IntervalTrigger(minutes=market_price_interval_minutes),
-            id="market_price_scrape",
-            name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
-            replace_existing=True,
-        )
-        logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
-
-        scheduler.add_job(
-            deep_archive_job,
-            trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
-            id="deep_archive",
-            name="Deep Archive (weekly on Sunday at 2 AM)",
-            replace_existing=True,
-        )
-
-        scheduler.start()
-        logger.info("Scheduler started")
-    else:
-        logger.info("Running in AWS Lambda - bypassing APScheduler initialization")
-
-    logger.info("Worker started successfully")
-
-    yield
-
-    # Shutdown
-    logger.info("Shutting down worker...")
-    is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
-    if not is_lambda:
-        scheduler.shutdown()
+async def close_databases() -> None:
     await close_postgres()
     if settings.mongo_enabled:
         from ..infrastructure.database.connection import close_database
         await close_database()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Long-running mode (`python run.py`): connect, then run the harvests on an in-process schedule.
+
+    One-shot mode (`python -m src.run_task news`) is what the scheduled GitHub Actions workflow uses.
+    """
+    logger.info("Starting Ethiopian Financial News Aggregation Worker...")
+    await connect_databases()
+
+    harvest_interval_hours = settings.harvest_interval_hours
+    scheduler.add_job(
+        quick_harvest_job,
+        trigger=IntervalTrigger(hours=harvest_interval_hours),
+        id="quick_harvest",
+        name=f"Quick Harvest (every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''})",
+        replace_existing=True,
+    )
+    logger.info(f"Harvest job scheduled to run every {harvest_interval_hours} hour{'s' if harvest_interval_hours != 1 else ''}")
+
+    market_price_interval_minutes = settings.market_price_scrape_interval_minutes
+    scheduler.add_job(
+        market_price_job,
+        trigger=IntervalTrigger(minutes=market_price_interval_minutes),
+        id="market_price_scrape",
+        name=f"Market Price Scrape (every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''})",
+        replace_existing=True,
+    )
+    logger.info(f"Market price scraping job scheduled to run every {market_price_interval_minutes} minute{'s' if market_price_interval_minutes != 1 else ''}")
+
+    scheduler.add_job(
+        deep_archive_job,
+        trigger=CronTrigger(day_of_week="sun", hour=2, minute=0),
+        id="deep_archive",
+        name="Deep Archive (weekly on Sunday at 2 AM)",
+        replace_existing=True,
+    )
+
+    scheduler.start()
+    logger.info("Scheduler started")
+    logger.info("Worker started successfully")
+
+    yield
+
+    logger.info("Shutting down worker...")
+    scheduler.shutdown()
+    await close_databases()
     logger.info("Worker shut down")
 
 
