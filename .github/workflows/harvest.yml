@@ -3,8 +3,10 @@ name: Harvest
 
 on:
   schedule:
-    - cron: "5 */2 * * *"        # news, every 2 hours
-    - cron: "*/30 6-12 * * 1-5"  # ESX prices, every 30 min during trading hours (UTC), weekdays
+    # Every 10 minutes, around the clock, weekends included - the same cadence the Lambda had.
+    # Offset minutes (not :00/:10) because GitHub delays runs queued at the top of the hour.
+    - cron: "3,13,23,33,43,53 * * * *"   # ESX prices
+    - cron: "8,18,28,38,48,58 * * * *"   # news
   workflow_dispatch:
     inputs:
       task:
@@ -13,9 +15,9 @@ on:
         options: [news, market_prices]
         default: news
 
-# Never run two harvests at once.
+# Never run the same task twice at once (prices and news may overlap each other).
 concurrency:
-  group: harvest
+  group: harvest-${{ github.event.schedule || inputs.task }}
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +36,7 @@ jobs:
 
       - name: Run task
         env:
-          TASK: ${{ github.event_name == 'workflow_dispatch' && inputs.task || (github.event.schedule == '5 */2 * * *' && 'news' || 'market_prices') }}
+          TASK: ${{ github.event_name == 'workflow_dispatch' && inputs.task || (github.event.schedule == '8,18,28,38,48,58 * * * *' && 'news' || 'market_prices') }}
           POSTGRES_DSN: ${{ secrets.POSTGRES_DSN }}
           MONGODB_URL: ${{ secrets.MONGODB_URL }}
           MONGODB_DB_NAME: ${{ secrets.MONGODB_DB_NAME }}
