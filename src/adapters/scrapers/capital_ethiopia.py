@@ -97,6 +97,9 @@ class CapitalEthiopiaScraper(BaseScraperImpl):
                             except Exception:
                                 pass
                         
+                        if await self.already_stored(article_url):
+                            continue
+
                         # Fetch full article
                         article_html = await self.fetch_html(article_url)
                         if article_html:

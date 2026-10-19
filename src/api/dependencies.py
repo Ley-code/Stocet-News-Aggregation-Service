@@ -1,10 +1,8 @@
 """FastAPI dependency injection."""
 from functools import lru_cache
-from ..adapters.scrapers.addis_fortune import AddisFortuneScraper
-from ..adapters.scrapers.capital_ethiopia import CapitalEthiopiaScraper
 from ..adapters.scrapers.esx import ESXScraper
-from ..adapters.repositories.mongo_repository import MongoNewsRepository
-from ..adapters.repositories.market_price_repository import MongoMarketPriceRepository
+from ..adapters.scrapers.registry import build_news_scrapers
+from ..infrastructure.config import settings
 from ..adapters.repositories.postgres_news_repository import PostgresNewsRepository
 from ..adapters.repositories.postgres_market_price_repository import PostgresMarketPriceRepository
 from ..adapters.repositories.dual_write_repository import (
@@ -26,14 +24,16 @@ def get_keyword_extractor() -> KeywordExtractor:
 
 
 @lru_cache()
-def get_mongo_news_repository() -> MongoNewsRepository:
-    """Get MongoDB news repository instance."""
+def get_mongo_news_repository():
+    """MongoDB news repository. Imported lazily so Motor/Beanie aren't loaded unless Mongo is enabled."""
+    from ..adapters.repositories.mongo_repository import MongoNewsRepository
     return MongoNewsRepository()
 
 
 @lru_cache()
-def get_mongo_market_price_repository() -> MongoMarketPriceRepository:
-    """Get MongoDB market price repository instance."""
+def get_mongo_market_price_repository():
+    """MongoDB market price repository (lazy import, see above)."""
+    from ..adapters.repositories.market_price_repository import MongoMarketPriceRepository
     return MongoMarketPriceRepository()
 
 
@@ -49,16 +49,20 @@ def get_postgres_market_price_repository() -> PostgresMarketPriceRepository:
     return PostgresMarketPriceRepository()
 
 
-def get_repository() -> DualWriteNewsRepository:
-    """Get dual-write news repository (Mongo primary, Postgres secondary)."""
+def get_repository():
+    """PostgreSQL is the source of truth; Mongo is mirrored only when MONGO_ENABLED=true."""
+    if not settings.mongo_enabled:
+        return get_postgres_news_repository()
     return DualWriteNewsRepository(
         primary=get_mongo_news_repository(),
         secondary=get_postgres_news_repository(),
     )
 
 
-def get_market_price_repository() -> DualWriteMarketPriceRepository:
-    """Get dual-write market price repository (Mongo primary, Postgres secondary)."""
+def get_market_price_repository():
+    """PostgreSQL is the source of truth; Mongo is mirrored only when MONGO_ENABLED=true."""
+    if not settings.mongo_enabled:
+        return get_postgres_market_price_repository()
     return DualWriteMarketPriceRepository(
         primary=get_mongo_market_price_repository(),
         secondary=get_postgres_market_price_repository(),
@@ -67,13 +71,8 @@ def get_market_price_repository() -> DualWriteMarketPriceRepository:
 
 def get_harvest_news_use_case() -> HarvestNewsUseCase:
     """Get harvest news use case instance."""
-    scrapers = [
-        AddisFortuneScraper(),
-        CapitalEthiopiaScraper(),
-        ESXScraper(),
-    ]
     return HarvestNewsUseCase(
-        scrapers=scrapers,
+        scrapers=build_news_scrapers(),
         repository=get_repository(),
         keyword_extractor=get_keyword_extractor()
     )

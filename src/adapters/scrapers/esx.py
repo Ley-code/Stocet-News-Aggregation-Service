@@ -1,4 +1,5 @@
 """ESX (Ethiopian Securities Exchange) scraper."""
+import asyncio
 import re
 from datetime import datetime
 from typing import List, Optional
@@ -18,8 +19,84 @@ class ESXScraper(BaseScraperImpl):
             source_name="ESX"
         )
     
+    _BROWSER_UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    )
+
     async def fetch_market_prices(self) -> List[MarketPrice]:
-        """Fetch market prices from ESX API endpoint.
+        """Fetch live prices from ESX's ticker.
+
+        ESX's homepage loads its ticker through a WordPress AJAX call (action ``esx_get_ticker``) that needs
+        the page's public nonce. We read the nonce from the homepage and make the same call. If that
+        fails (layout change), fall back to the old JSON endpoint.
+        """
+        # ESX's server is slow and occasionally times out, so retry before falling back.
+        for attempt in range(1, 4):
+            try:
+                prices = await self._fetch_market_prices_ajax()
+                if prices:
+                    return prices
+                logger.warning("ESX AJAX ticker returned no prices")
+                break
+            except Exception as e:
+                logger.error(f"ESX AJAX ticker attempt {attempt}/3 failed: {e!r}")
+                if attempt < 3:
+                    await asyncio.sleep(2 * attempt)
+        return await self._fetch_market_prices_legacy()
+
+    async def _fetch_market_prices_ajax(self) -> List[MarketPrice]:
+        if not self.client:
+            await self.connect()
+        headers = {"User-Agent": self._BROWSER_UA}
+
+        home = await self.client.get(self.base_url + "/", headers=headers, timeout=30.0)
+        home.raise_for_status()
+        nonce_match = re.search(r"const\s+nonce\s*=\s*[\"']([A-Za-z0-9]+)[\"']", home.text)
+        ajax_match = re.search(r"const\s+ajaxUrl\s*=\s*[\"']([^\"']+)[\"']", home.text)
+        if not nonce_match:
+            raise ValueError("ticker nonce not found on ESX homepage")
+        ajax_url = ajax_match.group(1) if ajax_match else self.base_url + "/wp-admin/admin-ajax.php"
+
+        response = await self.client.post(
+            ajax_url,
+            data={"action": "esx_get_ticker", "nonce": nonce_match.group(1)},
+            headers={**headers, "Accept": "application/json"},
+            timeout=30.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("success"):
+            raise ValueError(f"ESX ticker returned success=false: {str(payload)[:200]}")
+
+        now = datetime.now()
+        prices: List[MarketPrice] = []
+        for item in payload.get("data") or []:
+            try:
+                symbol = (item.get("symbol") or "").strip().upper()
+                price = float(str(item.get("price")).replace(",", ""))
+                pct = float(item.get("change") or 0)
+            except (ValueError, TypeError):
+                continue
+            if not symbol:
+                continue
+            # The ticker gives only the % change; derive the absolute move from it.
+            previous = price / (1 + pct / 100) if pct > -100 else price
+            prices.append(
+                MarketPrice(
+                    ticker_symbol=symbol,
+                    price=price,
+                    percent_change=pct,
+                    variation=round(price - previous, 4),
+                    timestamp=now,
+                    source="ESX",
+                )
+            )
+        logger.info(f"Found {len(prices)} market prices from ESX ticker: {[p.ticker_symbol for p in prices]}")
+        return prices
+
+    async def _fetch_market_prices_legacy(self) -> List[MarketPrice]:
+        """Old JSON endpoint (/wp-json/custom/v1/ticker). It started returning 404; kept only as a fallback.
         
         Returns:
             List of MarketPrice entities

@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db_name: str = "ethiopian_financial_news"
     
+    # MongoDB is a legacy copy of the data; the Core service reads PostgreSQL. Off unless MONGO_ENABLED=true,
+    # so an unreachable Mongo can no longer stop harvesting.
+    mongo_enabled: bool = False
+
     # PostgreSQL Configuration (dual-write target)
     postgres_dsn: str = "postgresql://postgres:postgres@localhost:5432/stocet_core?sslmode=disable"
     
@@ -30,9 +34,15 @@ class Settings(BaseSettings):
     # User Agent
     user_agent: str = "EthiopianFinancialIntelBot/1.0 (+https://github.com/your-repo/bot-policy)"
     
-    # Core Service URL (for triggering alerts after price updates)
+    # Core Service URL (for triggering alerts after price updates).
+    # Includes the /api/v1 version prefix.
     core_service_url: str = "http://localhost:8080/api/v1"
-    
+
+    # Shared secret for service-to-service calls to the Core Service.
+    # Must match the Core Service's INTERNAL_SECRET env var, otherwise
+    # alert triggering is rejected with 401.
+    internal_secret: str = ""
+
     # Logging
     log_level: str = "INFO"
     

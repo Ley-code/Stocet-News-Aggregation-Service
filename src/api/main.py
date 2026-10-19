@@ -13,8 +13,7 @@ from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 from ..infrastructure.config import settings
 from ..infrastructure.logging_config import configure_logging
-from ..infrastructure.database.connection import init_database, close_database
-from ..infrastructure.database.postgres_connection import init_postgres, close_postgres
+from ..infrastructure.database.postgres_connection import init_postgres, close_postgres, get_pool
 from .dependencies import get_harvest_news_use_case, get_harvest_market_prices_use_case
 
 # Configure logging
@@ -62,8 +61,16 @@ async def lifespan(app: FastAPI):
     """Application lifespan events."""
     # Startup
     logger.info("Starting Ethiopian Financial News Aggregation Worker...")
-    await init_database()
+    if settings.mongo_enabled:
+        from ..infrastructure.database.connection import init_database
+        try:
+            await init_database()
+        except Exception as e:
+            logger.error(f"MongoDB unavailable, continuing with PostgreSQL only: {e}")
     await init_postgres()
+    if get_pool() is None:
+        # Fail loudly: silently "succeeding" without a database is how harvesting stopped unnoticed.
+        raise RuntimeError("PostgreSQL is not reachable (check POSTGRES_DSN / network / security group)")
 
     is_lambda = bool(os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
     if not is_lambda:
@@ -112,7 +119,9 @@ async def lifespan(app: FastAPI):
     if not is_lambda:
         scheduler.shutdown()
     await close_postgres()
-    await close_database()
+    if settings.mongo_enabled:
+        from ..infrastructure.database.connection import close_database
+        await close_database()
     logger.info("Worker shut down")
 
 
@@ -146,8 +155,8 @@ async def harvest_news():
     """Manually trigger news harvesting (internal use only)."""
     try:
         use_case = get_harvest_news_use_case()
-        count = await use_case.execute(limit_per_source=10)
-        return {"message": "Harvest completed", "articles_saved": count}
+        count = await use_case.execute(limit_per_source=15)
+        return {"message": "Harvest completed", "articles_saved": count, "sources": use_case.summary()}
     except Exception as e:
         logger.error(f"Harvest failed: {e}")
         return {"message": "Harvest failed", "error": str(e)}

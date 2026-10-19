@@ -1,4 +1,6 @@
 """PostgreSQL connection pool using asyncpg."""
+from __future__ import annotations
+
 import asyncpg
 from loguru import logger
 from ..config import settings

@@ -21,10 +21,14 @@ def lambda_handler(event, context):
     if event.get("source") == "aws.events" or "task" in event:
         logger.info("EventBridge / Task trigger detected. Bypassing HTTP and running internal logic.")
         try:
-            task = event.get("task")
+            # A scheduled rule with no payload used to be ignored ("Unknown or missing task") and
+            # silently stopped all harvesting. Treat a bare schedule as the news harvest.
+            task = event.get("task") or "news"
             if task == "news":
                 logger.info("Running task: news")
                 result = asyncio.run(run_with_lifespan(harvest_news))
+                if isinstance(result, dict) and result.get("error"):
+                    raise RuntimeError(f"News harvest failed: {result['error']}")
                 logger.info(f"News harvesting completed: {result}")
                 return {"status": "success", "task": "news", "result": result}
                 

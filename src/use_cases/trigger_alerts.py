@@ -10,9 +10,14 @@ def trigger_alerts() -> None:
     Called after market prices are persisted. Failures are logged but never
     crash the main scraper process.
     """
-    url = f"{settings.core_service_url}/api/v1/internal/trigger-alerts"
+    # core_service_url already includes the /api/v1 prefix, so we only append
+    # the endpoint path here (appending /api/v1 again would 404).
+    url = f"{settings.core_service_url}/internal/trigger-alerts"
+    # The Core Service guards this endpoint with InternalSecretMiddleware and
+    # rejects unauthenticated calls with 401, so the shared secret is required.
+    headers = {"X-Internal-Secret": settings.internal_secret}
     try:
-        response = httpx.post(url, timeout=30.0)
+        response = httpx.post(url, headers=headers, timeout=30.0)
         if response.is_success:
             data = response.json()
             logger.info(

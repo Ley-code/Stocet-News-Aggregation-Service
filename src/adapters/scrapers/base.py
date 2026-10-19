@@ -1,7 +1,7 @@
 """Base scraper implementation with common functionality."""
 import asyncio
 import time
-from typing import List, Optional
+from typing import Awaitable, Callable, List, Optional
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin, urlparse
 from loguru import logger
@@ -29,6 +29,12 @@ class BaseScraperImpl(BaseScraper):
         self.error_count: int = 0
         self.circuit_breaker_active: bool = False
         self.circuit_breaker_until: float = 0
+        # Seconds between requests; subclasses may lower this for polite, low-volume sources.
+        self.request_delay: Optional[float] = None
+        # Local Ethiopian outlets: any recognised topic is relevant. Regional feeds must also mention Ethiopia.
+        self.domestic: bool = True
+        # Injected by the harvest use case: True if the URL is already stored, so we skip fetching it.
+        self.is_known: Optional[Callable[[str], Awaitable[bool]]] = None
     
     @property
     def source_name(self) -> str:
@@ -79,7 +85,7 @@ class BaseScraperImpl(BaseScraper):
         """Implement rate limiting between requests."""
         current_time = time.time()
         time_since_last = current_time - self.last_request_time
-        delay = settings.rate_limit_delay
+        delay = self.request_delay if self.request_delay is not None else settings.rate_limit_delay
         
         if time_since_last < delay:
             sleep_time = delay - time_since_last
@@ -120,6 +126,16 @@ class BaseScraperImpl(BaseScraper):
         """Record a successful request."""
         self.error_count = 0
     
+    async def already_stored(self, url: str) -> bool:
+        """Check the repository (when wired) so we never download pages we already have."""
+        if self.is_known is None:
+            return False
+        try:
+            return await self.is_known(url)
+        except Exception as e:
+            logger.debug(f"is_known check failed for {url}: {e}")
+            return False
+
     async def fetch_html(self, url: str) -> Optional[str]:
         """Fetch HTML content from URL with rate limiting and error handling.
         

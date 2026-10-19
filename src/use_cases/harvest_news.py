@@ -1,143 +1,106 @@
 """Use case for harvesting news from all sources."""
-from typing import List
+import asyncio
+from dataclasses import dataclass, field
+from typing import Dict, List
 from loguru import logger
 from ..domain.entities import NewsArticle
 from ..domain.interfaces import BaseScraper, NewsRepository
 from ..infrastructure.nlp.keyword_extractor import KeywordExtractor
+from .trigger_sentiment import trigger_sentiment
+
+# Sources are independent, so scrape them in parallel (a few at a time) to fit a Lambda time budget.
+MAX_CONCURRENT_SOURCES = 4
+
+
+@dataclass
+class SourceResult:
+    fetched: int = 0
+    saved: int = 0
+    duplicates: int = 0
+    irrelevant: int = 0
+    error: str = ""
 
 
 class HarvestNewsUseCase:
     """Orchestrates the fetching of news from different sources."""
-    
+
     def __init__(
         self,
         scrapers: List[BaseScraper],
         repository: NewsRepository,
-        keyword_extractor: KeywordExtractor
+        keyword_extractor: KeywordExtractor,
     ):
-        """Initialize harvest use case.
-        
-        Args:
-            scrapers: List of scraper instances
-            repository: News repository for persistence
-            keyword_extractor: Keyword extractor for filtering
-        """
         self.scrapers = scrapers
         self.repository = repository
         self.keyword_extractor = keyword_extractor
-    
-    async def execute(self, limit_per_source: int = 10) -> int:
-        """Harvest news from all sources.
-        
-        Args:
-            limit_per_source: Maximum articles to fetch per source
-            
-        Returns:
-            Number of new articles saved
-        """
-        total_saved = 0
-        
-        for scraper in self.scrapers:
+        self.results: Dict[str, SourceResult] = {}
+
+    async def _is_known(self, url: str) -> bool:
+        return await self.repository.find_by_url(url) is not None
+
+    def _classify(self, article: NewsArticle, domestic: bool = True) -> bool:
+        """Tag the article and return whether it belongs in the feed."""
+        text = f"{article.title} {article.content or ''}"
+        categories = self.keyword_extractor.classify(article.title, article.content or "")
+        article.tags = sorted(categories)
+        if not article.summary and article.content:
+            body = article.content.strip()
+            article.summary = body[:300].rsplit(" ", 1)[0] + "…" if len(body) > 300 else body
+        # ESX's own announcements are always relevant.
+        if article.source == "ESX":
+            return True
+        return self.keyword_extractor.is_relevant(text, categories, domestic)
+
+    async def _harvest_source(self, scraper: BaseScraper, limit: int, sem: asyncio.Semaphore) -> SourceResult:
+        result = SourceResult()
+        async with sem:
             try:
                 logger.info(f"Harvesting from {scraper.source_name}...")
-                
-                # Connect to scraper
+                if hasattr(scraper, "is_known"):
+                    scraper.is_known = self._is_known
                 await scraper.connect()
-                
-                # Fetch articles
-                articles = await scraper.fetch_latest_articles(limit=limit_per_source)
-                logger.info(f"Fetched {len(articles)} articles from {scraper.source_name}")
-                
-                # Process each article
-                articles_processed = 0
-                articles_with_keywords = 0
-                articles_duplicates = 0
-                articles_no_keywords = 0
-                
+                articles = await scraper.fetch_latest_articles(limit=limit)
+                result.fetched = len(articles)
+
                 for article in articles:
                     try:
-                        articles_processed += 1
-                        
-                        # Check if article has content
-                        if not article.content or len(article.content.strip()) < 50:
-                            logger.warning(
-                                f"⚠ Article has insufficient content: {article.title[:50]}... "
-                                f"(content length: {len(article.content) if article.content else 0})"
-                            )
-                        
-                        # Extract keywords and categories
-                        text_to_analyze = f"{article.title} {article.content or ''}"
-                        keywords = self.keyword_extractor.extract_keywords(text_to_analyze)
-                        categories = self.keyword_extractor.extract_categories(text_to_analyze)
-                        
-                        # Add tags
-                        article.tags = list(categories)
-                        
-                        # ESX news bypasses keyword filtering (save all)
-                        if article.source == "ESX":
-                            articles_with_keywords += 1
-                            was_saved = await self.repository.save(article)
-                            if was_saved:
-                                total_saved += 1
-                                logger.info(
-                                    f"✓ Saved ESX article (no filtering): {article.title[:50]}... "
-                                    f"(tags: {', '.join(categories) if categories else 'none'})"
-                                )
-                            else:
-                                articles_duplicates += 1
-                                logger.info(
-                                    f"⊘ Skipped duplicate ESX article: {article.title[:50]}... "
-                                    f"(URL: {article.url[:60]}...)"
-                                )
+                        if not self._classify(article, getattr(scraper, "domestic", True)):
+                            result.irrelevant += 1
                             continue
-                        
-                        # Check if article has financial relevance
-                        if keywords or categories:
-                            articles_with_keywords += 1
-                            # Save to repository
-                            was_saved = await self.repository.save(article)
-                            if was_saved:
-                                total_saved += 1
-                                logger.info(
-                                    f"✓ Saved new article: {article.title[:50]}... "
-                                    f"(tags: {', '.join(categories) if categories else 'none'}, keywords: {len(keywords)})"
-                                )
-                            else:
-                                articles_duplicates += 1
-                                logger.info(
-                                    f"⊘ Skipped duplicate: {article.title[:50]}... "
-                                    f"(URL: {article.url[:60]}...)"
-                                )
+                        if await self.repository.save(article):
+                            result.saved += 1
                         else:
-                            articles_no_keywords += 1
-                            logger.info(
-                                f"⊘ Skipped non-financial article: {article.title[:50]}... "
-                                f"(no keywords found)"
-                            )
-                    
+                            result.duplicates += 1
                     except Exception as e:
-                        logger.error(f"Failed to process article '{article.title[:50]}...': {e}", exc_info=True)
-                        continue
-                
+                        logger.error(f"[{scraper.source_name}] failed to process '{article.title[:50]}': {e}")
                 logger.info(
-                    f"Processed {articles_processed} articles from {scraper.source_name}: "
-                    f"{articles_with_keywords} with keywords, "
-                    f"{articles_duplicates} duplicates, "
-                    f"{articles_no_keywords} no keywords, "
-                    f"{total_saved} saved"
+                    f"{scraper.source_name}: fetched={result.fetched} saved={result.saved} "
+                    f"duplicates={result.duplicates} irrelevant={result.irrelevant}"
                 )
-                
-                # Disconnect from scraper
-                await scraper.disconnect()
-            
             except Exception as e:
+                result.error = str(e)
                 logger.error(f"Failed to harvest from {scraper.source_name}: {e}")
+            finally:
                 try:
                     await scraper.disconnect()
                 except Exception:
                     pass
-                continue
-        
-        logger.info(f"Harvest complete: {total_saved} new articles saved")
-        return total_saved
+        return result
 
+    async def execute(self, limit_per_source: int = 10) -> int:
+        """Harvest all sources; returns the number of new articles saved."""
+        sem = asyncio.Semaphore(MAX_CONCURRENT_SOURCES)
+        results = await asyncio.gather(*(self._harvest_source(s, limit_per_source, sem) for s in self.scrapers))
+        self.results = {s.source_name: r for s, r in zip(self.scrapers, results)}
+
+        total = sum(r.saved for r in results)
+        failed = [name for name, r in self.results.items() if r.error]
+        logger.info(f"Harvest complete: {total} new articles saved; sources failed: {failed or 'none'}")
+        if total > 0:
+            # Core's own sentiment worker doesn't run on Lambda, so ask it to classify the new articles.
+            await asyncio.to_thread(trigger_sentiment)
+        return total
+
+    def summary(self) -> Dict[str, dict]:
+        """Per-source counts, returned from the Lambda so a run is easy to inspect in CloudWatch."""
+        return {name: r.__dict__ for name, r in self.results.items()}
